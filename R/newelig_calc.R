@@ -5,7 +5,7 @@ library(readr)
 ###################################################################################################
 ######## NOTE: This pulls data from the AHRF 2019 file ################
 ## Since we use 2014 data only for this calculation, we do not need to 
-## update this file with the new data. File path may need to be changed.
+## update this file with the new data.
 #ahrf_raw  <- paste0("../data-raw/", "AHRF2019.asc") %>%
 newelig_raw <- paste0("~/DATA/","AHRF2019.asc") %>%
   read_fwf(fwf_cols(stateFIPS = c(122,123), # 'state FIPS'
@@ -28,8 +28,6 @@ newelig <- newelig_raw %>%
   filter(cntyName != "State of Alaska") %>%
   dplyr::select(FIPS, everything()) #reorder so FIPS is first variable
 
-#check whether counties included align between AHRF and mortality data
-#base_cnty <- read.csv("../data/base_cnty.csv", colClasses = c("FIPS"="character") )
 base_cnty <- read.csv("base_cnty.csv", colClasses = c("FIPS"="character") )
 newelig.fips <- newelig$FIPS
 mort.fips <- base_cnty$FIPS
@@ -56,18 +54,9 @@ mort.fips[which(!(mort.fips %in% newelig.fips))]
 newelig$FIPS[which(newelig$FIPS == "02158")] <- "02270" # Wade Hampton AK
 newelig$FIPS[which(newelig$FIPS == "46102")] <- "46113" # Shannon SD
 
-newelig.fips <- newelig$FIPS
-
-write.csv(newelig,file='newelig.csv',row.names = FALSE)
-
 #################### Finish Calculating Tiers for new PWRD Weights #########################
 
-newelig = read.csv("~/mnt/compute1-tlycurgu/pwrd_medicaid/newelig.csv")
-
-newelig$FIPS = as.character(newelig$FIPS)
 newelig %>%
-  mutate(FIPS = case_when(nchar(FIPS) < 5 ~ paste("0",FIPS,sep=""),
-                          nchar(FIPS) > 4 ~ FIPS)) %>%
   filter(stateName !='Hawaii',stateName !='Alaska',stateFIPS < 60,
          cntyName !='Bedford City',cntyName != 'Clifton Forge City') -> newelig
 
@@ -76,7 +65,6 @@ newelig %>%
          pct_ne = newly_eligible/pop1865_2014) -> newelig
 
 newelig = newelig[order(newelig$pct_ne),]
-#strat = c(rep(1,444),rep(2,444),rep(3,444),rep(4,444),rep(5,444),rep(6,444),rep(7,444))
 
 bucket = c(rep(1,518),rep(2,518),rep(3,518),rep(4,518),rep(5,518),rep(6,518))
 

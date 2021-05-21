@@ -5,6 +5,7 @@
 ##'
 #+ setup0, message=FALSE, warning=FALSE, echo=FALSE
 cleanupunderway  <- TRUE
+### library(survey) # If loading, this comes first. Avoids masking tidyverse functions.
 library(dplyr)
 library(readr)
 library(tidyr)
@@ -18,11 +19,16 @@ knitr::opts_chunk$set(warning=FALSE, echo=TRUE)
 ##' outcome analysis. (Adapted TL code, commenting out variables we don't need)
 ##' 
 ##' 
+##' ##' ### Opioid Overdose  
+##' We use the CDC definitions of ICD-10 codes for opioid overdoses found 
+##' [here](https://www.cdc.gov/drugoverdose/pdf/pdo_guide_to_icd-9-cm_and_icd-10_codes-a.pdf).
+##' All of the codes listed are in the data. 
+##' 
+##' We add an indicator variable 'opioid_involved' that flags deaths
+##' with any opioid primary or contributing cause of death 
+##' (i.e. in rcon1-rcon20). We use the codes set up in 01b_read_icd10.
 
 load("~/mnt/compute1-tlycurgu/pwrd_medicaid/icd10_strings.RData")
-## Combining icd codes for healthcare amenable and for flu-related into
-## one list for healthcare amenable (i.e. flu had been separated and I'm adding
-## it back in)
 list(amenable=c(amenable_icd10,flu_icd10)
      ) %>%
   map_chr(paste, collapse="|") ->
@@ -60,12 +66,14 @@ list(amenable=c(amenable_icd10,flu_icd10)
 ##' For each year of data (2011-2014) we run the following process:
 ##' 1. Read in columns of interest
 ##' 2. Drop non working aged adults (age 20-64), and code both of the race and age variables. as described above.
-##' 3. Create cause of death variable based on ICD-10 code (primary cause of death) grouped into
-##' healthcare amenable and healthcare non-amenable 
-##' 4. Collapse/sum number of deaths by age group, race categorization, county, type of death.
+##' 3. Create indicator that opioids were involved in any of the multiple causes of death.
+##' 4. Create cause of death variable based on ICD-10 code (primary cause of death) as in `01-base-mortality.R`, grouped into
+##' healthcare amenable (non flu), flu, healthcare non-amenable (non opioid), and opioid.
+##' 5. Collapse/sum number of deaths by age group, race categorization, county, type of death, and involvement of opioids.
+##' 6. Save data in the temp folder.
 ##' 
 ##'You will note that there are two possible file paths, one for running on compute 1 and one for running 
-##'on TL's local computer setup for testing.
+##'on CM's local computer setup for testing.
 
 summarize_det_dat <- function(year, icd10codes = icd10_regexps){
   file.name <- paste0("MULT", year, ".USAllCnty.txt")
@@ -162,10 +170,22 @@ summarize_det_dat <- function(year, icd10codes = icd10_regexps){
   print(table(mort_detail$race_bridge))
   print(table(mort_detail$race_imp))
   
+  #create indicator that opioids are involved in any multiple causes of death (record conditions)
+  #mort_detail <- mort_detail %>% 
+  #  mutate(across(contains("rcon"), ~str_detect(.x, icd10codes["opioid"]))) %>%
+  #  mutate(opioid_involved = case_when(rowSums(.[grep("rcon", names(.))], na.rm = TRUE) > 0 ~ 1,
+  #                                     TRUE ~ 0)) %>%
+  #  select(-c(rcon1:rcon20))
+  
+  #create varible categorizing deaths like in 01-base-mortality.R
   mort_detail <- mort_detail %>% 
     mutate(c_o_d_cat=
-             case_when(!str_detect(icd10, icd10codes['amenable']) ~
+             case_when(# str_detect(icd10, icd10codes['opioid']) ~
+                      #    "Opioid",
+                        !str_detect(icd10, icd10codes['amenable']) ~
                           "HCUA",
+                      #  str_detect(icd10, icd10codes['flu']) ~
+                      #    "Flu",
                         str_detect(icd10, icd10codes['amenable']) ~
                           "HCA",
                         TRUE ~ as.character(icd10) # (not caught by any of above
@@ -183,17 +203,17 @@ summarize_det_dat <- function(year, icd10codes = icd10_regexps){
 
 ##' Now run this process on the years of data 2011-2014:
 
-sapply(2014:2018, summarize_det_dat)
+sapply(2011:2014, summarize_det_dat)
 
 ##' Next, we will combine the data in order to create a master dataset 
 ##' with the variables of interest for our outcome covariance adjustment modeling.
-file <- paste0("data/temp/det_mort_", 2014 ,".Rdata")
+file <- paste0("data/temp/det_mort_", 2011 ,".Rdata")
 #path <- file.path("..", file)
 path <- file.path("..","..","..", "compute1", file)
 load(path)
 mort_det_comb <- mort_det_sum
 
-for (year in 2015:2018){
+for (year in 2012:2014){
   #path <- file.path("..", paste0("data/temp/det_mort_", year ,".Rdata"))
   path <- file.path("..","..","..", "compute1", paste0("data/temp/det_mort_", year ,".Rdata"))
   load(path)

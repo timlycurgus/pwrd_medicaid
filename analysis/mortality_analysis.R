@@ -212,11 +212,16 @@ system.time(
   )
 )
 
+## CM: load output to check, since I don't run the random effects model
+load(file.path(path,'nb_reHCA.Rdata'))
+load(file.path(path,'nb_reALL.Rdata'))
+
 ests = fixef(nb$rew)[c("Tx:bucket1","Tx:bucket2","Tx:bucket3","Tx:bucket4",
                         "Tx:bucket5","Tx:bucket6")]
 wb = wts_bct$weights_bct
 ests%*%wb
 
+##CM: This isn't working for me
 require(merDeriv)
 system.time(
   rew_vcovCR0 <- vcov(nb$rew, full = TRUE, ranpar = 'var')
@@ -269,6 +274,7 @@ nb_re$eff_est = ests
 nb_re$yr_effs = fixef(nb$rew)[c("Tx:as.character(YEAR)2016", "Tx:as.character(YEAR)2017",
                                 "Tx:as.character(YEAR)2018")]
 
+## CM: did you just run all of this twice to get either the HCA or all cause results?
 save(nb_re,file='nb_reHCA.Rdata')
 
 #temp_data = filter(medicaid_comp,!is.na(matches.final),pop_count > 0, YEAR > 2014)

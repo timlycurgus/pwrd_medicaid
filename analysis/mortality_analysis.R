@@ -21,22 +21,26 @@ knitr::opts_chunk$set(warning=FALSE, echo=TRUE)
 ##' stratifications, and newly eligible buckets
 ##' 
 
+## CM - add path to compute1 directory
+path <- file.path("..","..","..", "compute1","data", "pwrd_medicaid")
+
 # Load Healthcare Amenable Data
 #load('~/mnt/compute1-tlycurgu/pwrd_medicaid/medicaid_comp1318.Rdata')
-load('medicaid_comp1318.Rdata')
+load(file.path(path, 'medicaid_comp1318.Rdata'))
 medicaid_comp1318 %>%
   rename(death_count = HCA) -> medicaid_comp
 
 # Load All Cause Mortality Data
 #load('~/mnt/compute1-tlycurgu/pwrd_medicaid/medicaid_comp1318.Rdata')
-load('medicaid_comp1318ALL.Rdata')
+load(file.path(path,'medicaid_comp1318ALL.Rdata'))
 medicaid_comp1318ALL %>%
   rename(death_count = All.Cause) -> medicaid_comp
 
+## CM: This overwrites the medicaid_comp data, so it is only all cause
 
 load('mod.dat_final.Rdata')
 load('newelig_df_updated.Rdata')
-state.df = read.csv('state.df.csv')
+state.df = read.csv('state_df.csv')
 
 mod.dat %>%
   select(c(1,52)) -> match_data
@@ -64,21 +68,30 @@ medicaid_comp %>%
 bracket_pct = aggregate(control$pct_ne,by=list(control$bucket),mean,na.rm=TRUE)
 wts_bct = data.frame(bracket = as.factor(1:6), weights_bct = bracket_pct$x/sum(bracket_pct$x))
 
+## CM: My understanding from this is that the weights are proportional to the percent newly eligible in each bucket
+
 full_formula <- death_count ~ Tx + offset(log(pop_count))
 PB_formula <- update(full_formula,.~. - Tx)
 
 mod_control  <- glm.nb(PB_formula, 
                      data=control)
 
+## CM: these predictions are on the scale of hte linear predictor
 fits_cont = predict(mod_control)
 dummies_buck = model.matrix(~factor(control$bucket)-1)
 b_names = c('B1','B2','B3','B4','B5','B6')
 colnames(dummies_buck) = b_names
 
+## CM: predicting death count using the buckets only and the coefficients from the control model
 mod_c = glm.nb(death_count ~ dummies_buck - 1 + offset(fits_cont), data=control)
+
+## CM: sandwhich estimate of covariance matrix w original method, clustered by county
 sigma_exp = vcovCR(mod_c,cluster=control$FIPS,type='CR0')
+
+##CM: Inverse variance weighting?
 weights_b = t(wts_bct$weights_bct%*%solve(sigma_exp))
 
+##CM: This step gives more weight to the higher buckets and lessens the weight to the lower buckets
 wts_bct = data.frame(bucket = as.factor(c(1:6)),weights_bct = weights_b/sum(weights_b))
 medicaid_comp %>% left_join(wts_bct) -> medicaid_comp
 
@@ -121,6 +134,16 @@ wb = wts_bct$weights_bct
 
 nb$fixef$vcovHC1 <- sandwich::vcovCL(nb$fixef,cluster=~stateFIPS,type='HC1')
 
+#CM - checking manual calculate variance and covariance terms 
+bucket_names <- c("Tx:bucket1","Tx:bucket2","Tx:bucket3","Tx:bucket4",
+             "Tx:bucket5","Tx:bucket6")
+
+cov.mat <- nb$fixef$vcovHC1[bucket_names, bucket_names]
+wb.mat <- matrix(rep(wb, 6), nrow = 6, byrow = T)
+var.cov.mat <- wb.mat * t(wb.mat) * cov.mat
+var.terms = sum(diag(var.cov.mat))
+cov.terms = 2*sum(var.cov.mat*upper.tri(var.cov.mat))
+
 var_terms = wb[1]^2*nb$fixef$vcovHC1["Tx:bucket1","Tx:bucket1"] + 
   wb[2]^2*nb$fixef$vcovHC1["Tx:bucket2","Tx:bucket2"] + 
   wb[3]^2*nb$fixef$vcovHC1["Tx:bucket3","Tx:bucket3"] + 
@@ -144,7 +167,14 @@ cov_terms = 2*(wb[1]*wb[2]*nb$fixef$vcovHC1["Tx:bucket1","Tx:bucket2"] +
                  wb[4]*wb[6]*nb$fixef$vcovHC1["Tx:bucket4","Tx:bucket6"] +
                  wb[5]*wb[6]*nb$fixef$vcovHC1["Tx:bucket5","Tx:bucket6"])
 
+## CM: looks good!
+cov_terms == cov.terms
+var_terms - var.terms < .00000001
+
+## CM: What is this value?
 ests%*%wb/sqrt(var_terms + cov_terms)
+
+##CM: Why do you not include the treatment year interactions in the unweighted model?
 
 ### Unweighted version ###
 system.time(
@@ -192,6 +222,7 @@ system.time(
   rew_vcovCR0 <- vcov(nb$rew, full = TRUE, ranpar = 'var')
   )
 
+## CM: I would change these to the names of the columns, just to be confident if the columns change
 rel_mat = rew_vcovCR0[70:75, 70:75]
 
 var_terms = sum(diag(rel_mat)%*%c(wb^2))
